@@ -27,7 +27,7 @@ export class StatesFactory {
             if (graph.edges.find(edge => {
                 return edge.to.id === componentNameInGraph;
             }) !== undefined) {
-                states.push(new State(length + 1, StateType.Error, componentIDX, graph.id));
+                states.push(new State(-1, StateType.Error, componentIDX, graph.id));
             }
         }
         return states;

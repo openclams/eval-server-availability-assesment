@@ -2,6 +2,7 @@ import {LabelledTransitionSystem} from './LabelledTransitionSystem';
 import {LTSTransition} from './LTSTransition';
 import {State} from './State';
 import {MinimalLTS} from './MinimalLTS';
+import {StateType} from '../../enums/StateType';
 
 export class ComponentLabelledTransitionSystem {
     labelledTransitionSystems: LabelledTransitionSystem[];
@@ -50,6 +51,22 @@ export class ComponentLabelledTransitionSystem {
         });
         // we get the initial and end state over all
         // we combine all error states to one
+        const errorStates = minimalStates.filter(s => {
+            return s.type === StateType.Error;
+        });
+        if (errorStates.length > 1) {
+            minimalTransitions.filter(e => {
+                return e.destination.type === StateType.Error;
+            }).forEach(e => {
+                e.destination = errorStates [0];
+            });
+            for (let i = 1; i < errorStates.length; i++) {
+                const index = minimalStates.indexOf(errorStates[i]);
+                if (index != -1) {
+                    minimalStates.splice(index, 1);
+                }
+            }
+        }
 
 
         return new MinimalLTS(this.componentIDX, minimalStates, minimalTransitions);

@@ -42,7 +42,6 @@ app.post('/', async (req, res) => {
 
     const tmp = ComponentLabelledTransitionsSystemsFactory.getComponentLalelledTransitionSystems(model);
     const LTS = new CLTSCollection(tmp);
-    debugger
     const minimals = MinimalLTSCollectionFactory.getMinimalLTSCollectionFactory(LTS);
     res.json({
         result: '89 % at 300 $/m',
