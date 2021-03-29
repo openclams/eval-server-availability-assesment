@@ -13,8 +13,9 @@ import {
 } from '@openclams/clams-ml';
 import JsonReplacementProtocol from './json-replacement-protocol';
 import {ComponentLabelledTransitionsSystemsFactory} from './factories/LTS/ComponentLabelledTransitionsSystemsFactory';
-import {CLTSCollection} from './model/LTS/CLTSCollection';
+import {Composer} from './factories/Composer';
 import {MinimalLTSCollectionFactory} from './factories/LTS/MinimalLTSCollectionFactory';
+import {MatrixFactory} from './factories/MatrixFactory';
 
 const app = express();
 const port = 8087; // default port to listen
@@ -38,14 +39,27 @@ app.post('/', async (req, res) => {
     const searchSpace = listAllComponentOptions(model);
     // Call algorithm that returns best replacement options
     const replacementList = algorithm(model, searchSpace);
-    // Return the result to the caller
+    // replace the generalized components with the best specific one
+    replacementList.filter(r => r['replaceWith'] !== null).forEach(r => {
+        replace(r['componentIdx'], model, r['replaceWith']);
+        r['replaceWith'] = r['replaceWith'].id;
+    });
 
-    const tmp = ComponentLabelledTransitionsSystemsFactory.getComponentLalelledTransitionSystems(model);
-    const LTS = new CLTSCollection(tmp);
-    const minimals = MinimalLTSCollectionFactory.getMinimalLTSCollectionFactory(LTS);
+    // with this we calculate the Component Labelled Transitions system for all components in the model
+    const cltss = ComponentLabelledTransitionsSystemsFactory.getComponentLabelledTransitionSystems(model);
+
+    // this miminizes the cltss
+    const mins = MinimalLTSCollectionFactory.getMinimalLTSCollectionFactory(cltss);
+
+    // this composes the cltss into one big lts
+    const c = Composer.compose(mins);
+
+    //here we get the matrix for cheung and also calculate the reliability as well
+    // the name could be changed actually
+    const rel = MatrixFactory.getMatrix(c);
     res.json({
-        result: '89 % at 300 $/m',
-        //replacements: replacementList
+        result: rel.toString(),
+        replacements: replacementList
     } as JsonReplacementProtocol);
 });
 
@@ -80,9 +94,11 @@ function algorithm(model: Model, searchSpace: SearchSpace[]) {
 
     // Example just return the first leaf for each component as recommendation
     const replacementList: any[] = searchSpace.map(component => {
+        const rels = component.options.map(o => o.getAttribute('reliability').value);
+        const maxRel = rels.indexOf(Math.max(...rels));
         return {
             componentIdx: component.idx,
-            replaceWith: component.options.length > 0 ? component.options[0].id : null
+            replaceWith: component.options.length > 0 ? component.options[maxRel] : null
         };
     });
     return replacementList;

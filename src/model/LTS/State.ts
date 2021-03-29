@@ -9,11 +9,11 @@ export class State {
     stateTransitionsOut: StateTransition[];
     ltsTransitionsIn: LTSTransition[];
     ltsTransitionsOut: LTSTransition[];
-    componentIDX: Number;
+    componentIDX: number;
     graphID: string;
 
 
-    constructor(id: number, type: StateType, componentIDX: Number, graphID: string) {
+    constructor(id: number, type: StateType, componentIDX: number, graphID: string) {
         this.componentIDX = componentIDX;
         this.graphID = graphID;
         this.id = id;

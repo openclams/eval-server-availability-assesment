@@ -1,7 +1,8 @@
 export enum StateType {
-    Initial,
-    Normal,
-    End,
-    Error
+    Initial = 'Initial',
+    Normal = 'Normal',
+    End = 'End',
+    Error = 'Error',
+    Final = 'Final'
 
 }

@@ -1,14 +1,15 @@
 import {State} from './State';
-import {StateTransition} from './StateTransition';
 
 export class MinimalLTS {
-    componentIDX: Number;
+    componentIDX: number;
     states: State[];
-    transitions: StateTransition[];
+    initialState: State;
+    finalState: State;
 
-    constructor(componentIDX: Number, states: State[], transitions: StateTransition[]) {
+    constructor(componentIDX: number, states: State[], initialState: State, finalState: State) {
         this.componentIDX = componentIDX;
         this.states = states;
-        this.transitions = transitions;
+        this.initialState = initialState;
+        this.finalState = finalState;
     }
 }
