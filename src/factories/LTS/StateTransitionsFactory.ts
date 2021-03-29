@@ -1,6 +1,7 @@
 import {Graph, Model} from '@openclams/clams-ml';
 import {StateTransition} from '../../model/LTS/StateTransition';
 import {State} from '../../model/LTS/State';
+import {StateType} from '../../enums/StateType';
 
 export class StateTransitionsFactory {
     static getTransitions(model: Model, componentIDX: number, graph: Graph, states: State[]): Array<StateTransition> {
@@ -31,14 +32,15 @@ export class StateTransitionsFactory {
                 prob = prob / 100;
                 const sourceComponentIDX = instanceIDXMap.get(edge.from.id);
                 const targetComponentIDX = instanceIDXMap.get(edge.to.id);
-                const newEdge = new StateTransition(index, prob, fromState, toState, graph.id, componentIDX, sourceComponentIDX, targetComponentIDX);
+                const id = transitions.filter(t=> t.destination.type !== StateType.Error).filter(t=> t.sourceComponentIDX === sourceComponentIDX && t.targetComponentIDX === targetComponentIDX).length
+                const newEdge = new StateTransition(id, prob, fromState, toState, graph.id, componentIDX, sourceComponentIDX, targetComponentIDX);
                 transitions.push(newEdge);
                 fromState.stateTransitionsOut.push(newEdge);
                 toState.stateTransitionsIn.push(newEdge);
                 // if the edge is an incoming edge we add a transition to the error state
                 if (edge.from.id !== componentNameInGraph) {
                     const errorState = states[states.length - 1];
-                    const errorEdge = new StateTransition(0 - index, 1 - prob, fromState, errorState, graph.id, componentIDX, sourceComponentIDX, targetComponentIDX);
+                    const errorEdge = new StateTransition(id, 1 - prob, fromState, errorState, graph.id, componentIDX, sourceComponentIDX, targetComponentIDX);
                     transitions.push(errorEdge);
                     fromState.stateTransitionsOut.push(errorEdge);
                     errorState.stateTransitionsIn.push(errorEdge);

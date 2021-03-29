@@ -69,9 +69,7 @@ export class Composer {
         // check if there are doubles
         // these are possible
         let allTrans = ([] as StateTransition[]).concat(...compState.states.map(s => s.stateTransitionsOut));
-        const finalTrans = allTrans.filter(t => t.destination.type === StateType.Final);
         const compTrans: CompositeTransition[] = [];
-        //if (finalTrans.length === compState.states.length) {
         if (allTrans.find(t => t.destination.type === StateType.Final && t.probability === 1.0)) {
             const newState = Composer.createFinalState(mins);
             const newTrans = new CompositeTransition(compState, newState, 1);
@@ -86,8 +84,9 @@ export class Composer {
             const fromComp = t.sourceComponentIDX;
             const toComp = t.targetComponentIDX;
             const graphID = t.graphID;
+            const id = t.id
             const transPartner = filteredTrans.slice(index + 1).find(tp => {
-                return tp.graphID === graphID && tp.targetComponentIDX === toComp && tp.sourceComponentIDX === fromComp;
+                return tp.graphID === graphID && tp.targetComponentIDX === toComp && tp.sourceComponentIDX === fromComp&& tp.id === id;
             });
             if (transPartner !== undefined) {
                 transPair.push([t, transPartner]);
@@ -108,7 +107,7 @@ export class Composer {
             const sender = pair.find(t => t.componentIDX === t.sourceComponentIDX);
             // find the corresponding error transition
             const err = errorTrans.find(t => t.sourceComponentIDX === pair[0].sourceComponentIDX && t.targetComponentIDX === pair[0].targetComponentIDX &&
-                t.graphID === pair[0].graphID);
+                t.graphID === pair[0].graphID && t.id === pair[0].id);
             // multiply the probabilities of those two transitions
             const errorProb = sender.probability * err.probability;
             // add a new compTrans to arr that has the isErrorTransition flag set

@@ -43,7 +43,7 @@ export class Minimizer {
 
         // add a final state to the lts
         const newFinalState = new State(0, StateType.Final, -1, 'Final');
-        const finalTrans = new StateTransition(-1, 1, finalState, newFinalState, 'Final', finalState.componentIDX, finalState.componentIDX, newFinalState.componentIDX);
+        const finalTrans = new StateTransition(0, 1, finalState, newFinalState, 'Final', finalState.componentIDX, finalState.componentIDX, newFinalState.componentIDX);
         newFinalState.stateTransitionsIn.push(finalTrans);
         finalState.stateTransitionsOut.push(finalTrans);
         allStates.push(newFinalState);
@@ -211,7 +211,7 @@ export class Minimizer {
             // and connect it with the state transitions out
             s.stateTransitionsOut.forEach(stateTransOut => {
                 const newProb = ltsTransIn.probability * stateTransOut.probability;
-                const newStateTrans = new StateTransition(1, newProb, ltsTransIn.sourceState, stateTransOut.destination, stateTransOut.graphID, stateTransOut.componentIDX, stateTransOut.sourceComponentIDX, stateTransOut.targetComponentIDX);
+                const newStateTrans = new StateTransition(stateTransOut.id, newProb, ltsTransIn.sourceState, stateTransOut.destination, stateTransOut.graphID, stateTransOut.componentIDX, stateTransOut.sourceComponentIDX, stateTransOut.targetComponentIDX);
                 Minimizer.addStateTransition(newStateTrans);
             });
 
@@ -249,9 +249,9 @@ export class Minimizer {
 
         states.forEach(s => {
             const errorTrans = s.stateTransitionsOut.filter(t => t.destination.type === StateType.Error);
-            const distinctErrorTrans = errorTrans.filter(t => t === errorTrans.find(et => et.sourceComponentIDX === t.sourceComponentIDX && et.targetComponentIDX === t.targetComponentIDX && et.componentIDX === t.componentIDX && et.graphID === t.graphID));
+            const distinctErrorTrans = errorTrans.filter(t => t === errorTrans.find(et => et.sourceComponentIDX === t.sourceComponentIDX && et.targetComponentIDX === t.targetComponentIDX && et.componentIDX === t.componentIDX && et.graphID === t.graphID && et.id === t.id));
             distinctErrorTrans.forEach(det => {
-                const idents = errorTrans.filter(t => t.componentIDX === det.componentIDX && t.sourceComponentIDX === det.sourceComponentIDX && t.targetComponentIDX === det.targetComponentIDX && t.graphID === det.graphID);
+                const idents = errorTrans.filter(t => t.componentIDX === det.componentIDX && t.sourceComponentIDX === det.sourceComponentIDX && t.targetComponentIDX === det.targetComponentIDX && t.graphID === det.graphID && t.id ===det.id);
                 this.combineTransitions(idents);
             });
         });

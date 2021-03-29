@@ -2,8 +2,11 @@ import {State} from './State';
 
 export class StateTransition {
 
-    // represents the index in the model
+    // the id represents how many times a transaction from the same component to the same other component happened before this.
+    // in the boiler example all ids should be 0 since in no scenario a components sends a double message to the same other component
     id: number;
+
+
     probability: number;
     source: State;
     destination: State;
