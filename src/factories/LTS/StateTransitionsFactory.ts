@@ -28,8 +28,7 @@ export class StateTransitionsFactory {
                 // for every edge in the model we create a transition
                 const fromState = states[index];
                 const toState = states[index + 1];
-                let prob = (edge.from.id === componentNameInGraph) ? 100 : this.getProb(model, componentIDX);
-                prob = prob / 100;
+                let prob = (edge.from.id === componentNameInGraph) ? 1 : this.getProb(model, componentIDX);
                 const sourceComponentIDX = instanceIDXMap.get(edge.from.id);
                 const targetComponentIDX = instanceIDXMap.get(edge.to.id);
                 const id = transitions.filter(t=> t.destination.type !== StateType.Error).filter(t=> t.sourceComponentIDX === sourceComponentIDX && t.targetComponentIDX === targetComponentIDX).length
@@ -51,6 +50,6 @@ export class StateTransitionsFactory {
     }
 
     private static getProb(model: Model, componentIDX: number): number {
-        return model.components[componentIDX].component.getAttribute('reliability').value;
+        return model.components[componentIDX].component.getAttribute('_availability').value;
     }
 }

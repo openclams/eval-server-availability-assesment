@@ -1,5 +1,6 @@
 {
     "compilerOptions": {
+        "resolveJsonModule": true,
         "module": "commonjs",
         "esModuleInterop": true,
         "target": "es6",
@@ -14,7 +15,6 @@
             ]
         }
     },
-    "compileOnSave": true,
     "include": [
         "src/**/*"
     ]

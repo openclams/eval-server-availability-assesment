@@ -70,7 +70,7 @@ export class Composer {
         // these are possible
         let allTrans = ([] as StateTransition[]).concat(...compState.states.map(s => s.stateTransitionsOut));
         const compTrans: CompositeTransition[] = [];
-        if (allTrans.find(t => t.destination.type === StateType.Final && t.probability === 1.0)) {
+        if (allTrans.filter(t => t.destination.type === StateType.Final).length === compState.states.length) {
             const newState = Composer.createFinalState(mins);
             const newTrans = new CompositeTransition(compState, newState, 1);
             compTrans.push(newTrans);

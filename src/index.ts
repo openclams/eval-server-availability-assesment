@@ -1,49 +1,54 @@
 import express from 'express';
 import cors from 'cors';
-import bodyParser from 'body-parser';
-import axios from 'axios';
-import {
-    CatalogFactory,
-    Component,
-    ComponentFactory,
-    JsonCatalog,
-    Model,
-    ModelFactory,
-    Service
-} from '@openclams/clams-ml';
+import {Service, Model, ModelFactory } from '@openclams/clams-ml';
 import JsonReplacementProtocol from './json-replacement-protocol';
+import SearchSpace from './search-space';
 import {ComponentLabelledTransitionsSystemsFactory} from './factories/LTS/ComponentLabelledTransitionsSystemsFactory';
 import {Composer} from './factories/Composer';
 import {MinimalLTSCollectionFactory} from './factories/LTS/MinimalLTSCollectionFactory';
 import {MatrixFactory} from './factories/MatrixFactory';
+import JsonReplacementComponent from './json-replacement-component';
+import Search from './harmony-search/search';
+import Candidate from './harmony-search/candidate';
+import {listAllComponentOptions, replace, arraysEqual} from './utils';
+import { Replacement, Result, Value } from './result';
+import Improvisation from './harmony-search/improvisation';
+import * as fs from 'fs';
+import { resetTimer, startTimer, stopTimer } from './timer';
 
-const app = express();
-const port = 8087; // default port to listen
-
-app.use(cors());
-app.use(bodyParser.urlencoded({extended: true}));
-app.use(bodyParser.json());
-app.use(bodyParser.raw());
+const stats = require("stats-lite");
 
 
-// define a route handler for the default home page
-// @ts-ignore
-// @ts-ignore
-app.post('/', async (req, res) => {
+let bound = 0.948; 
 
-    // Deserialize the json model
-    const model = ModelFactory.fromJSON(req.body.model);
-    // Connect the model with service catalog
-    await loadCatalogs(model);
-    // Find all leafs of the sub-tree of each component
-    const searchSpace = listAllComponentOptions(model);
-    // Call algorithm that returns best replacement options
-    const replacementList = algorithm(model, searchSpace);
-    // replace the generalized components with the best specific one
-    replacementList.filter(r => r['replaceWith'] !== null).forEach(r => {
-        replace(r['componentIdx'], model, r['replaceWith']);
-        r['replaceWith'] = r['replaceWith'].id;
-    });
+function setBound(b:number){
+    bound = b;
+}
+
+function getBound(){
+    return bound;
+}
+
+
+function serializeReplacementList(replacements: Replacement[]):JsonReplacementComponent[]{
+
+    return replacements.filter(c=>c).map(replacement => {
+    
+        return {
+    
+            componentIdx: replacement.index,
+    
+            replaceWith: replacement.suggestion.id
+    
+        }
+    }); 
+}
+
+
+
+
+function computeAvailability(model:Model):number{
+
 
     // with this we calculate the Component Labelled Transitions system for all components in the model
     const cltss = ComponentLabelledTransitionsSystemsFactory.getComponentLabelledTransitionSystems(model);
@@ -56,18 +61,72 @@ app.post('/', async (req, res) => {
 
     //here we get the matrix for cheung and also calculate the reliability as well
     // the name could be changed actually
-    const rel = MatrixFactory.getMatrix(c);
-    res.json({
-        result: rel.toString(),
-        replacements: replacementList
-    } as JsonReplacementProtocol);
-});
+    return MatrixFactory.getMatrix(c);
+}
 
-// start the express server
-app.listen(port, () => {
-    // tslint:disable-next-line:no-console
-    console.log(`server started at http://localhost:${port}`);
-});
+function computeCost(model:Model):number{
+    const result = model.components.map(cw => {
+
+        const component = cw.component;
+
+        if(component instanceof Service){
+
+            if(component.costs && component.costs[0] && component.costs[0].cost) 
+                return parseFloat(component.costs[0].cost.toString());
+            else 
+                return 1; 
+        }
+
+        return Infinity;
+    });
+
+    return result.reduce((prev,curr) => {
+
+        return curr+prev
+
+    },0);
+}
+
+
+function replaceComponents( indexList:number[], searchSpace:SearchSpace[], model:Model ):Model{
+
+    const copyModel = model;//ModelFactory.copy(model);
+  
+    indexList.forEach((val,i) =>{
+
+        const alternative = searchSpace[i].refinements[val];
+
+        replace(searchSpace[i].index ,alternative,copyModel); 
+
+    });
+    
+    return copyModel;
+}
+
+function evaluate(model:Model):Value{
+    startTimer('ComputationTime');
+    const availability = computeAvailability(model);
+
+    const cost = computeCost(model);
+    
+    return {
+        availability,
+        cost,
+        loss: Infinity,
+        time: stopTimer('ComputationTime')
+    };
+}
+
+function loss(values:Value):number{
+
+    if(values.availability >= getBound()){
+
+        return values.loss =  values.cost;
+
+    }
+
+    return Infinity;
+}
 
 /**
  * Skeleton for implementing an evaluation algorithm
@@ -77,149 +136,379 @@ app.listen(port, () => {
  *
  * @param searchSpace The list of replacement options
  */
-function algorithm(model: Model, searchSpace: SearchSpace[]) {
+function algorithm(model: Model, searchSpace: SearchSpace[]):Result {
 
-    // Example replace a component in the model
-    // 1. Argument is the index of the component in model.components, here  model.components[0]
-    // 2. Argument is the model
-    // 3. Argument is the component, here we look at the first option in of the first component recommendation
+    const counts:number[] = searchSpace.map(_=>0);
 
-    // replace(0,model,searchSpace[0].options[0]); // (Uncomment this line if you want to use it)
+    const termination_criteria:number[] = searchSpace.map(s=>s.refinements.length-1);
 
-    // once we replaced the component in the model, we can evalute the model again
+    startTimer('TimeMeasurementForHS');    
+    
+    let newModel = replaceComponents(counts,searchSpace,model);
+    
+    let values = evaluate(newModel);
+    
+    let minimal_loss = loss(values);
+    
+    let best_suggestion = Object.assign([], counts);
+    
+    let best_result = values;
+    
+    let l = 0;
+    
+    // prettyPrint(best_suggestion,
+    //             searchSpace,
+    //             minimal_loss,
+    //             values.availability);
+    
+    while(!arraysEqual(counts,termination_criteria)){
 
-    // Example create a copy of a model
-    const copyModel = ModelFactory.copy(model);
-    // Now model and copyModel are two different objects
+        for(let a = 0; a < counts.length; a++){
 
-    // Example just return the first leaf for each component as recommendation
-    const replacementList: any[] = searchSpace.map(component => {
-        const rels = component.options.map(o => o.getAttribute('reliability').value);
-        const maxRel = rels.indexOf(Math.max(...rels));
+            if( a == 0){
+
+                counts[a] += 1;
+                
+            }else{
+
+                if (counts[a-1] > termination_criteria[a-1]){
+
+                    counts[a-1] = 0;
+
+                    counts[a] += 1;
+                }
+            }  
+        }
+
+        newModel = replaceComponents(counts,searchSpace,model);
+
+        values = evaluate(newModel);
+
+        l = loss(values);
+
+        if(minimal_loss > l){
+
+                minimal_loss = l
+
+                best_result = values;
+
+                best_suggestion = Object.assign([], counts);
+        }
+        //console.log(counts);
+        //prettyPrint(counts, searchSpace, l,values.availability );
+    }
+
+    const FullScanTime = stopTimer('TimeMeasurementForHS')
+    resetTimer('TimeMeasurementForHS')
+
+    const total_posibilities = searchSpace.map(s=>s.refinements.length).filter(c=> c != 0).reduce((sum, current) => sum * current, 1);
+
+    console.log(
+        minimal_loss, 
+        best_result.availability,
+        FullScanTime,
+        total_posibilities
+        )
+
+    const replacements: Replacement[] = searchSpace.map((suggestion,idx) => {
+
         return {
-            componentIdx: component.idx,
-            replaceWith: component.options.length > 0 ? component.options[maxRel] : null
+            index: suggestion.index,
+            component: suggestion.component,
+            suggestion: suggestion.refinements[best_suggestion[idx]]
         };
     });
-    return replacementList;
+
+    return {
+        values,
+        replacements
+    }
+    
 }
 
-/**
- * For every component in the model,
- * we list all options of components we can use to replace this component.
- * This function return an list containing the index of the i-th component in
- * model.components with an array that has all replacements options.
- */
-function listAllComponentOptions(model: Model) {
-    const res: SearchSpace[] = [];
-    model.components.forEach((cw, idx) => {
-        const leafs = getLeafs(cw.component);
-        res.push({idx: idx, options: leafs});
+function lossHS(candidates: Candidate[]):number{
+
+    const model = candidates[0].value.model;
+
+    candidates.forEach((candidate) =>{
+
+        //console.log(candidate);
+
+        replace(candidate.value.cidx, candidate.value.component, candidate.value.model); 
+
     });
-    return res;
+
+    let result = evaluate(model);
+
+    candidates[0].value['result'] = result;
+
+    return loss(result);
+}
+
+
+function searchSpace2candidateSpace(searchSpace: SearchSpace[],model: Model):Candidate[][]{
+
+    return searchSpace.map((dimension)=>{
+    
+        return dimension.refinements.map((suggestion)=>{
+    
+            const c =  new Candidate();
+    
+            c.value = { 
+                /**
+                 * The position in the model.component list for which we 
+                 * whish to replace
+                 */
+                cidx : dimension.index, 
+                component : suggestion,
+                model: model
+            };
+    
+            return c;
+        });
+    });
+}
+
+function  algorithmHS(model: Model, 
+                        candidateSpace: Candidate[][],  
+                        harmony_memory_size = 5,
+                        harmony_memory_consideration_rate = 0.95, 
+                        pitch_adjustment_rate = 0.1,
+                        termination = 1000):Result {
+
+  
+
+    const hs = new Search(  candidateSpace,
+                            lossHS, 
+                            harmony_memory_size,
+                            harmony_memory_consideration_rate,
+                            pitch_adjustment_rate,
+                            termination);
+    
+    startTimer('TimeMeasurementForHS');    
+    const bestSolution = hs.run();
+    const HSTime = stopTimer('TimeMeasurementForHS')
+    resetTimer('TimeMeasurementForHS')
+    
+    const total_posibilities =  candidateSpace.map(c=> c.length).filter(c=> c != 0).reduce((sum, current) => sum * current, 1);
+
+    console.log(harmony_memory_size,
+        harmony_memory_consideration_rate,
+        pitch_adjustment_rate, 
+        termination,
+        bestSolution.candidates[0].value['result'].loss, 
+        bestSolution.candidates[0].value['result'].availability,
+        HSTime,
+        total_posibilities
+        )
+    
+    const replacements: Replacement[] = bestSolution.candidates.map((solution,idx) => {
+        return {
+            index: solution.value.cidx,
+            component: model.components[solution.value.cidx].component,
+            suggestion: solution.value.component
+        };
+    });
+    return {
+        values:  bestSolution.candidates[0].value['result'],
+        replacements
+    }
+    
+}
+
+
+async function test(){
+
+    for(let i = 1; i < 2; i++){
+        
+        const rawModel = fs.readFileSync("./src/tests/"+i+".json")
+        
+        let c = JSON.parse(rawModel.toString());
+        //console.log(m['model']);
+
+        const model:Model = ModelFactory.fromJSON(c.model);
+        
+        const searchSpace =  await listAllComponentOptions(model)
+
+        const total_posibilities = searchSpace.map(s=>s.refinements.length).filter(c=> c != 0).reduce((sum, current) => sum * current, 1);
+
+        if(i == 19 || i == 24 || i == 22){
+        
+            setBound(0.93)
+
+        }else{
+
+            setBound(0.948)
+       
+        }
+
+        console.log('\n\n->',i)
+
+        let searchEngine:Result = null;
+ 
+
+        if(total_posibilities < 50000000){
+        
+            console.log("Exhaustive Search")
+
+            searchEngine = algorithm(model, searchSpace);
+
+            resetTimer('ComputationTime')
+        }
+
+        console.log("Harmony Search")
+
+        const candidateSpace = searchSpace2candidateSpace(searchSpace, model);
+
+        const pcrs = [0.05,0.1,0.2,0.4]
+        const hms = [10,100,1000]
+        const term = [5000,10000,50000]
+        const hmcrs = [0.80,0.85,0.9, 0.95]
+        for (let pcr of pcrs) {
+            for (let hm of hms) {
+                for (let t of term) {
+                    for (let hmcr of hmcrs) {
+
+                        searchEngine = algorithmHS(model,candidateSpace, hm, hmcr,  pcr, t);
+                        
+                        resetTimer('ComputationTime');
+                    }
+                }
+            }
+        }   
+    }
+
 }
 
 /**
- * Return all leaf nodes of the sub-tree beginning at component.
- *
- * We use a depth-first search (DFS) to find all leafs nodes.
- * If no leafs are available (because component is alredy a leaf),
- * then function returns an empty list.
- *
+ * Start test when no args are given
  */
-function getLeafs(component: Component) {
-    const leafs = [];
-    const stack: Component[] = [];
-    component.children.forEach(child => stack.push(child));
-    while (stack.length) {
-        const component = stack.pop();
-        if (component instanceof Service) {
-            leafs.push(component);
-        } else {
-            component.children.forEach(child => stack.push(child));
+if(process.argv.length == 2){
+
+    test();
+
+}
+
+
+function mostFrequentResult(results:Result[]):Result
+{
+    if(results.length == 0){
+        return null;
+    }
+    
+    let modeMap:Record<string,number> = {};
+
+    let maxEl = results[0]
+    
+    let maxCount = 1;
+    
+    for(var i = 0; i < results.length; i++)
+    {
+        const l:string = results[i].values.loss.toString();
+    
+        if(modeMap[l] == null){
+        
+            modeMap[l] = 1;
+        
+        }else{
+          
+            modeMap[l]++;
+        
+        }  
+
+        if(modeMap[l] > maxCount){
+        
+            maxEl = results[i];
+        
+            maxCount = modeMap[l];
         }
     }
-    return leafs;
+    return maxEl;
 }
 
+
 /**
- * Bind all catalogs of all cloud providers in the model.
- *
- * A model does not store the cataloags, since they are to large.
- * However, to use the component.children field, the component needs to
- * look up in the tree strucutre which is part of the catalog.
- * With this function we load the catalogs and connect them to the model,
- * so we can itereate over the catalog and search for child/parent nodes.
+ * If the first argument is web, the application starts the express server.
+ * The follow up argument is intepreted as the port number.
  */
-async function loadCatalogs(model: Model) {
-    for (const cloudProvider of model.cloudProviders) {
-        const catalogUrl = cloudProvider.basePath + cloudProvider.catalogFile;
-        const response = await axios.get<JsonCatalog>(catalogUrl);
-        const jsonCatalog: JsonCatalog = response.data;
-        const catalog = CatalogFactory.fromJSON(cloudProvider, jsonCatalog);
-        model.bindTo(catalog);
+if((process.argv.length == 3 || process.argv.length == 4) && process.argv[2] == 'web'){
+    /**
+     * Start the express server
+     */
+     const app = express();
+
+     /**
+      * Default port to listen
+      */
+     let port = 8085;
+    
+     /**
+      * Activate CROS to allow corss origin acces for the web-app
+      */
+     app.use(cors());
+    
+     /**
+      * Parse  x-www-form-urlencoded data
+      */
+     app.use(express.urlencoded({ extended: true }));
+    
+     /**
+      * Parse JSON data
+      */
+     app.use(express.json());
+
+     app.post('/', async (req, res) => {
+    
+        const model = ModelFactory.fromJSON(req.body.model);
+
+        console.log('Availability' , req.body.availability)
+
+        setBound(parseFloat(req.body.availability)/100)
+    
+        const searchSpace = await listAllComponentOptions(model);
+    
+        startTimer('approx');
+
+        const candidateSpace = searchSpace2candidateSpace(searchSpace, model);
+
+        const HMS = model.components.length * 2
+        const iterations = 10000
+
+        let results:Result[]  = []
+
+        for(let i = 0; i < 1; i++){
+
+            results.push(algorithmHS(model,candidateSpace, HMS, 0.85,  0.1, iterations));
+
+        }
+
+        console.log("Approx time:" ,stopTimer('approx'));
+    
+        resetTimer('approx');
+
+        let result:Result = mostFrequentResult(results)
+
+        res.json({
+        
+            result: 'Availaiblity: '+result.values.availability.toString()+' Cost: '+result.values.cost.toString(),
+        
+            replacements: serializeReplacementList(result.replacements)
+        
+        } as JsonReplacementProtocol);
+    });
+
+    if(process.argv.length == 4){
+
+        port = parseInt(process.argv[3])
+    
     }
+
+    app.listen(port, () => {
+
+        console.log(`server started at http://localhost:${port}`);
+
+    });  
 }
 
-/**
- * Replace a component in the model with a new component for all
- * instance across all graphs.
- *
- * @param idx The index of the i-th component wrapper in the model.components list
- * @param component Replacement component
- */
-function replace(idx: number, model: Model, component: Component) {
-    // Get the component wrapper that contains the source component
-    const cw = model.components[idx];
-    // Remember the name, because we unreference the component
-    const name = cw.component.getAttribute('name').value;
-    // Create a copy of the target component (since it might be a reference to catalog component)
-    const componentCopy = ComponentFactory.copy(component, model);
-    // Assign the component to the component wrapper.
-    // Now all instances in cw.instances reference the target component
-    cw.component = componentCopy;
-    // Finally, add the missing name. 
-    addNameAttribute(componentCopy, name);
-}
 
-/**
- * Add an attribute containing the name of the component.
- *
- * The name attribute is different to the name field of the component.
- * We do not change the name field, since it is the actual name of the
- * service/patter/template. However, we wish to give components that are connected
- * with instances also an individual name to distinigues multiple components of the same
- * type or to indentify them better. Therfore the store the individual name of a component
- * as an attribute called 'name'.
- *
- * Example:
- *
- * >  component.getAttribute('name').value // Contains the individual name,e.g., User Database
- * >  component.name // Contains the service name, e.g., MySql
- *
- *
- * @param component The target component
- * @param name The name of the component as attribute
- */
-function addNameAttribute(component: Component, name: string) {
-    const nameAttribute = component.getAttribute('name');
-    // If the attribute does not exist, we creat a new one.
-    if (!nameAttribute) {
-        component.setAttribute({
-            id: 'name',
-            img: null,
-            name: 'Name',
-            type: 'string',
-            value: name,
-            readable: false,
-            description: 'Component Name'
-        });
-    } else {
-        nameAttribute.value = name;
-    }
-}
 
-interface SearchSpace {
-    idx: number;
-    options: Component[];
-}
